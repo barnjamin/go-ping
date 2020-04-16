@@ -47,9 +47,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"net"
+	"os"
 	"sync"
 	"syscall"
 	"time"
@@ -92,6 +94,7 @@ func NewPinger(addr string) (*Pinger, error) {
 		Interval: time.Second,
 		Timeout:  time.Second * 100000,
 		Count:    -1,
+		Log:      log.New(os.Stdout, "go-ping", log.LstdFlags),
 		id:       r.Intn(math.MaxInt16),
 		network:  "udp",
 		ipv4:     ipv4,
@@ -109,6 +112,9 @@ type Pinger struct {
 	// Timeout specifies a timeout before ping exits, regardless of how many
 	// packets have been received.
 	Timeout time.Duration
+
+	// Logger to write error messages to
+	Log *log.Logger
 
 	// Count tells pinger to stop after sending (and receiving) Count echo
 	// packets. If this option is not specified, pinger will operate until
@@ -302,7 +308,7 @@ func (p *Pinger) run() {
 
 	err := p.sendICMP(conn)
 	if err != nil {
-		fmt.Println(err.Error())
+		p.Log.Println(err.Error())
 	}
 
 	timeout := time.NewTicker(p.Timeout)
@@ -325,12 +331,12 @@ func (p *Pinger) run() {
 			}
 			err = p.sendICMP(conn)
 			if err != nil {
-				fmt.Println("FATAL: ", err.Error())
+				p.Log.Println("FATAL: ", err.Error())
 			}
 		case r := <-recv:
 			err := p.processPacket(r)
 			if err != nil {
-				fmt.Println("FATAL: ", err.Error())
+				p.Log.Println("FATAL: ", err.Error())
 			}
 		}
 		if p.Count > 0 && p.PacketsRecv >= p.Count {
@@ -559,7 +565,7 @@ func (p *Pinger) sendICMP(conn *icmp.PacketConn) error {
 func (p *Pinger) listen(netProto string) *icmp.PacketConn {
 	conn, err := icmp.ListenPacket(netProto, p.Source)
 	if err != nil {
-		fmt.Printf("Error listening for ICMP packets: %s\n", err.Error())
+		p.Log.Printf("Error listening for ICMP packets: %s\n", err.Error())
 		close(p.done)
 		return nil
 	}
